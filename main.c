@@ -1,6 +1,7 @@
 #include "raylib.h"
 #include <math.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 // Screen Configurations
 #define SCREEN_WIDTH 1920
@@ -39,6 +40,9 @@ Vector2 Vector2ScaleCustom(Vector2 v, float scale);
 float Clamp(float value, float min, float max);
 int GetGridSpacing(float zoom);
 void DrawRuler(Camera2D camera, int ShowRuler);
+void UpdateGridVariables(Camera2D camera);
+void DrawCenter(Camera2D camera);
+void DrawCoordinates(Camera2D camera);
 
 float Lerp(float start, float end, float amount) {
     return start + amount * (end - start);
@@ -98,15 +102,26 @@ int main(void) {
         BeginDrawing();
         ClearBackground(BACKGROUND_COLOR);
 
+
+        UpdateGridVariables(camera);
         BeginMode2D(camera);
         DrawDynamicGrid(camera, showGrid);
 
         EndMode2D();
 
         DrawRuler(camera, ShowRuler);
+        DrawCoordinates(camera);
+
 
         DrawText("Hold Middle Mouse Button to Pan. Scroll to Zoom. Press G to toggle grid.", 10, SCREEN_HEIGHT - 20, 10, INFO_TEXT_COLOR);
-        DrawText(TextFormat("Camera: [ %.2f , %.2f ]", camera.target.x, camera.target.y), 40, 40, 20, INFO_TEXT_COLOR);
+
+        /* DrawText(TextFormat("Camera: [ %.2f , %.2f ]", camera.target.x, camera.target.y), 40, 40, 20, INFO_TEXT_COLOR); */
+
+
+
+
+
+
 
         EndDrawing();
     }
@@ -115,62 +130,100 @@ int main(void) {
     return 0;
 }
 
-// TODO separate into drawRuler and make variables like showruler []
-// TODO separate the grid into its hown submodule []
-// TODO the grid should be a perfect grid, and give the illusion of being infinite []
-void DrawDynamicGrid(Camera2D camera, bool showGrid) {
-    if (!showGrid) return;
+// Grid Global variables
+int gridSpacing;
+int gridVisibleLinesX;
+int gridVisibleLinesY;
+Vector2 gridCameraSpace;
+int gridOffsetX;
+int gridOffsetY;
+Color gridColor;
 
-    int spacing = GetGridSpacing(camera.zoom);
-    int visibleLinesX = gridSizeFactor * (SCREEN_WIDTH / spacing) + 2;
-    int visibleLinesY = gridSizeFactor * (SCREEN_HEIGHT / spacing) + 2;
-    Vector2 cameraSpace = {
+
+// TODO separate the grid into its hown submodule []
+void UpdateGridVariables(Camera2D camera) {
+    gridSpacing = GetGridSpacing(camera.zoom);
+    gridVisibleLinesX = gridSizeFactor * (SCREEN_WIDTH / gridSpacing) + 2;
+    gridVisibleLinesY = gridSizeFactor * (SCREEN_HEIGHT / gridSpacing) + 2;
+    gridCameraSpace = (Vector2){
         .x = camera.target.x - (SCREEN_WIDTH / 2) * camera.zoom,
         .y = camera.target.y - (SCREEN_HEIGHT / 2) * camera.zoom
     };
+    gridOffsetX = ((int)gridCameraSpace.x % gridSpacing);
+    gridOffsetY = ((int)gridCameraSpace.y % gridSpacing);
+    gridColor = GRID_COLOR;
+    gridColor.a = (unsigned char)Clamp(255.0f * (1.0f - (float)gridSpacing/GRID_LEVELS[GRID_LEVEL_COUNT - 1]), 50, 255);
+}
 
-    int offsetX = ((int)cameraSpace.x % spacing);
-    int offsetY = ((int)cameraSpace.y % spacing);
+void DrawDynamicGrid(Camera2D camera, bool showGrid) {
+    if (!showGrid) return;
 
-    Color gridColor = GRID_COLOR;
-    gridColor.a = (unsigned char)Clamp(255.0f * (1.0f - (float)spacing/GRID_LEVELS[GRID_LEVEL_COUNT - 1]), 50, 255);
-
-    for (int i = -visibleLinesX; i < visibleLinesX; i++) {
-        int x = i * spacing - offsetX;
+    for (int i = -gridVisibleLinesX; i < gridVisibleLinesX; i++) {
+        int x = i * gridSpacing - gridOffsetX;
         DrawLineEx((Vector2){x, -SCREEN_HEIGHT * gridSizeFactor}, (Vector2){x, SCREEN_HEIGHT * gridSizeFactor}, GRID_LINE_WIDTH, gridColor);
     }
 
-    for (int i = -visibleLinesY; i < visibleLinesY; i++) {
-        int y = i * spacing - offsetY;
+    for (int i = -gridVisibleLinesY; i < gridVisibleLinesY; i++) {
+        int y = i * gridSpacing - gridOffsetY;
         DrawLineEx((Vector2){-SCREEN_WIDTH * gridSizeFactor, y}, (Vector2){SCREEN_WIDTH * gridSizeFactor, y}, GRID_LINE_WIDTH, gridColor);
     }
 }
 
-
 void DrawRuler(Camera2D camera, int showRuler) {
     if (!showRuler) return;
 
-    int spacing = GetGridSpacing(camera.zoom);
-    Vector2 cameraSpace = {
-        .x = camera.target.x - (SCREEN_WIDTH / 2) * camera.zoom,
-        .y = camera.target.y - (SCREEN_HEIGHT / 2) * camera.zoom
-    };
-
-    int offsetX = ((int)cameraSpace.x % spacing);
-    int offsetY = ((int)cameraSpace.y % spacing);
-
-    // Horizontal ruler (top of the window)
-    for (int i = -SCREEN_WIDTH / 2; i < SCREEN_WIDTH / 2; i += spacing) {
-        int x = i + SCREEN_WIDTH / 2 - offsetX;  // Adjust for camera's position
-        DrawText(TextFormat("%d", (int)(cameraSpace.x + i)), x, 0, 10, Fade(GRID_COLOR, 0.7f));
+    for (int i = -gridVisibleLinesX; i < gridVisibleLinesX; i++) {
+        int x = i * gridSpacing - gridOffsetX;
+        char* text = TextFormat("%d", (int)(gridCameraSpace.x + i * gridSpacing));
+        int textWidth = MeasureText(text, 10);
+        DrawText(text, x - textWidth / 2, 10, 10, Fade(GRID_COLOR, 0.7f));
+        DrawText("|", x, 20, 10, Fade(GRID_COLOR, 0.7f));
     }
 
-    // Vertical ruler (right side of the window)
-    for (int i = -SCREEN_HEIGHT / 2; i < SCREEN_HEIGHT / 2; i += spacing) {
-        int y = i + SCREEN_HEIGHT / 2 - offsetY;  // Adjust for camera's position
-        DrawText(TextFormat("%d", (int)(cameraSpace.y + i)), SCREEN_WIDTH - 50, y, 10, Fade(GRID_COLOR, 0.7f));  // 50 is an offset from the right edge
+    for (int i = -gridVisibleLinesY; i < gridVisibleLinesY; i++) {
+        int y = i * gridSpacing - gridOffsetY;
+        char* text = TextFormat("%d", (int)(gridCameraSpace.y + i * gridSpacing));
+        int textWidth = MeasureText(text, 10);
+        DrawText(text, SCREEN_WIDTH - 60 - textWidth, y, 10, Fade(GRID_COLOR, 0.7f));
+        DrawText("--", SCREEN_WIDTH - 20, y, 10, Fade(GRID_COLOR, 0.7f));
     }
 }
+
+
+void DrawCoordinates(Camera2D camera) {
+    char xValue[20];
+    char yValue[20];
+    sprintf(xValue, "%.2f", camera.target.x);
+    sprintf(yValue, "%.2f", camera.target.y);
+
+    int xOffset = 40;
+    int yOffset = 1035;
+    int fontSize = 20;
+
+    DrawText("   x :  ", xOffset, yOffset, fontSize, INFO_TEXT_COLOR);
+    xOffset += MeasureText("   x :  ", fontSize);
+
+    DrawText(xValue, xOffset, yOffset, fontSize, RED);
+    xOffset += MeasureText(xValue, fontSize);
+
+    DrawText("   y :  ", xOffset, yOffset, fontSize, INFO_TEXT_COLOR);
+    xOffset += MeasureText("   y :  ", fontSize);
+
+    DrawText(yValue, xOffset, yOffset, fontSize, BLUE);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 int GetGridSpacing(float zoom) {
     float logZoom = logf(zoom + 1.0f);
